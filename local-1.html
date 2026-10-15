@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Attendance</title>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f3f5f0;--ink:#16221c;--mute:#5d6b63;--line:#d3dacf;--card:#fff;--ok:#1f7a4d;--no:#b3392f;--rev:#a8741a;--acc:#16221c}
+@media(prefers-color-scheme:dark){:root{--bg:#121a16;--ink:#e8efe9;--mute:#97a69c;--line:#2b3a32;--card:#1a2520;--ok:#4cc58a;--no:#ee7a6f;--rev:#e0b04f;--acc:#e8efe9}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.9rem;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:1.15rem;margin:0 0 10px}
+p.sub{margin:0 0 18px;color:var(--mute)}
+nav{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;font:inherit;color:var(--mute);cursor:pointer}
+nav button.on{color:var(--ink);border-color:var(--acc);font-weight:700}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px}
+.cam{position:relative;background:#000;border-radius:6px;overflow:hidden;aspect-ratio:4/3}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+input,select,button.b{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink);width:100%;margin-bottom:8px}
+button.b{background:var(--acc);color:var(--bg);border-color:var(--acc);cursor:pointer;font-weight:700;margin-top:4px}
+button.b.alt{background:none;color:var(--ink)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--rev);outline-offset:1px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--mute);font-weight:400}
+.pill{font-weight:700}.present{color:var(--ok)}.absent{color:var(--no)}.pending{color:var(--mute)}
+.who{min-height:92px;border-left:5px solid var(--line);padding-left:12px;margin-top:12px}
+.who.hit{border-color:var(--ok)}
+.who b{font-size:1.25rem}
+.msg{color:var(--mute);font-size:.9rem;margin:6px 0}
+.hide{display:none}
+.stats{display:flex;gap:18px;margin:10px 0;font-size:1.05rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Face attendance</h1>
+<p class="sub">Recognised face = present. Not scanned by the end of class = absent.</p>
+<nav>
+  <button id="t1" class="on">Take attendance</button>
+  <button id="t2">Students</button>
+  <button id="t3">Teacher desk</button>
+</nav>
+
+<section id="p1">
+  <div class="grid">
+    <div>
+      <div class="cam"><video id="v1" autoplay muted playsinline></video><canvas id="c1"></canvas></div>
+      <div class="who" id="who"><span class="msg">Start a session, then have each student face the camera.</span></div>
+    </div>
+    <div class="box">
+      <h2>Session</h2>
+      <select id="course"></select>
+      <div class="row">
+        <button class="b" id="start">Start session</button>
+        <button class="b alt" id="end" disabled>End and mark absent</button>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Roll</th><th>Name</th><th>Status</th><th>Time</th></tr></thead><tbody id="list"></tbody></table></div>
+      <button class="b alt" id="csv">Download CSV</button>
+    </div>
+  </div>
+</section>
+
+<section id="p2" class="hide">
+  <div class="grid">
+    <div>
+      <div class="cam"><video id="v2" autoplay muted playsinline></video></div>
+      <p class="msg" id="enmsg">Camera starts when you open this tab.</p>
+    </div>
+    <div class="box">
+      <h2>Enrol a student</h2>
+      <input id="nm" placeholder="Full name" autocomplete="off">
+      <input id="rl" placeholder="Roll number" autocomplete="off">
+      <input id="cr" placeholder="Course (e.g. CS101)" autocomplete="off">
+      <input id="em" placeholder="Email (optional)" autocomplete="off">
+      <button class="b" id="enrol">Capture face and save</button>
+      <p class="msg">Only a numeric face signature is stored, not the photo. Get the student's consent before enrolling.</p>
+      <h2 style="margin-top:14px">Enrolled</h2>
+      <div style="overflow-x:auto"><table><tbody id="stl"></tbody></table></div>
+    </div>
+  </div>
+</section>
+<section id="p3" class="hide">
+  <div class="box">
+    <h2>Monthly record</h2>
+    <div class="row"><select id="dc"></select><input id="dm" type="month"></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Roll</th><th>Name</th><th>Present</th><th>Absent</th><th>%</th></tr></thead><tbody id="dsum"></tbody></table></div>
+    <div class="row" style="margin-top:8px"><button class="b" id="xl">Download Excel</button><button class="b alt" id="clr">Delete this month</button></div>
+    <p class="msg">Download the Excel at month end, then delete that month to start fresh.</p>
+  </div>
+  <div class="box" style="margin-top:18px">
+    <h2>Day view</h2>
+    <select id="dd"></select>
+    <div class="grid">
+      <div><b class="present">Present</b><table><tbody id="dp"></tbody></table></div>
+      <div><b class="absent">Absent</b><table><tbody id="da"></tbody></table></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+const MODELS='https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+const $=id=>document.getElementById(id);
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){alert('Storage full or blocked.')}};
+let students=load('fa_students',[]);   // {id,name,roll,course,email,desc:[...]}
+let session=null;                       // {course,date,marks:{id:time},ended}
+let stream=null,timer=null,ready=false;
+const opt=()=>new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:.5});
+
+async function init(){
+  try{
+    await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri(MODELS),faceapi.nets.faceLandmark68Net.loadFromUri(MODELS),faceapi.nets.faceRecognitionNet.loadFromUri(MODELS)]);
+    ready=true;
+  }catch(e){$('who').innerHTML='<span class="msg">Could not load face models. Check your internet connection and serve this page over https or localhost.</span>'}
+  renderStudents();fillCourses();
+}
+async function cam(video){
+  stop();
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:640,height:480}});video.srcObject=stream}
+  catch(e){alert('Camera blocked. Allow camera access and use https or localhost.')}
+}
+function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}clearInterval(timer)}
+
+function tab(n){
+  [1,2,3].forEach(i=>{$('p'+i).classList.toggle('hide',n!=i);$('t'+i).classList.toggle('on',n==i)});
+  stop();
+  if(n==2)cam($('v2'));
+  if(n==3)deskInit();
+  if(n==1&&session&&!session.ended){cam($('v1'));loop()}
+}
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);$('t3').onclick=()=>tab(3);
+
+// ---- enrol ----
+$('enrol').onclick=async()=>{
+  const nm=$('nm').value.trim(),rl=$('rl').value.trim(),cr=$('cr').value.trim();
+  if(!ready)return $('enmsg').textContent='Models still loading.';
+  if(!nm||!rl||!cr)return $('enmsg').textContent='Enter name, roll number and course.';
+  if(students.some(s=>s.roll===rl&&s.course===cr))return $('enmsg').textContent='That roll number is already enrolled in this course.';
+  $('enmsg').textContent='Looking for a face...';
+  const r=await faceapi.detectSingleFace($('v2'),opt()).withFaceLandmarks().withFaceDescriptor();
+  if(!r)return $('enmsg').textContent='No face found. Face the camera in good light.';
+  students.push({id:Date.now().toString(36),name:nm,roll:rl,course:cr,email:$('em').value.trim(),desc:Array.from(r.descriptor)});
+  save('fa_students',students);
+  ['nm','rl','em'].forEach(i=>$(i).value='');
+  $('enmsg').textContent='Saved '+nm+'.';renderStudents();fillCourses();
+};
+function renderStudents(){
+  $('stl').innerHTML=students.map(s=>`<tr><td>${esc(s.roll)}</td><td>${esc(s.name)}</td><td>${esc(s.course)}</td><td><button class="b alt" style="margin:0;padding:4px 8px;width:auto" data-d="${s.id}">Remove</button></td></tr>`).join('')||'<tr><td class="msg">No students yet.</td></tr>';
+  document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{if(confirm('Remove this student?')){students=students.filter(s=>s.id!==b.dataset.d);save('fa_students',students);renderStudents();fillCourses()}});
+}
+function fillCourses(){
+  const c=[...new Set(students.map(s=>s.course))];
+  $('course').innerHTML=c.map(x=>`<option>${esc(x)}</option>`).join('')||'<option value="">Enrol students first</option>';
+}
+function esc(t){return String(t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
+
+// ---- attendance ----
+const roster=()=>students.filter(s=>s.course===session.course);
+$('start').onclick=async()=>{
+  const course=$('course').value;
+  if(!ready||!course)return;
+  session={course,date:new Date().toISOString().slice(0,10),marks:{},ended:false};
+  $('start').disabled=true;$('end').disabled=false;
+  $('who').className='who';$('who').innerHTML='<span class="msg">Scanning... one student at a time.</span>';
+  renderList();await cam($('v1'));loop();
+};
+function loop(){
+  const list=roster();if(!list.length)return;
+  const m=new faceapi.FaceMatcher(list.map(s=>new faceapi.LabeledFaceDescriptors(s.id,[new Float32Array(s.desc)])),0.5);
+  const cv=$('c1');
+  timer=setInterval(async()=>{
+    const v=$('v1');if(!v.videoWidth||session.ended)return;
+    const r=await faceapi.detectSingleFace(v,opt()).withFaceLandmarks().withFaceDescriptor();
+    cv.width=v.videoWidth;cv.height=v.videoHeight;
+    const g=cv.getContext('2d');g.clearRect(0,0,cv.width,cv.height);
+    if(!r)return;
+    const b=r.detection.box,best=m.findBestMatch(r.descriptor);
+    g.lineWidth=4;g.strokeStyle=best.label==='unknown'?'#ee7a6f':'#4cc58a';g.strokeRect(b.x,b.y,b.width,b.height);
+    if(best.label==='unknown'){$('who').className='who';$('who').innerHTML='<span class="msg">Face not recognised. Try again or ask the teacher to enrol you.</span>';return}
+    const s=list.find(x=>x.id===best.label);
+    const first=!session.marks[s.id];
+    if(first){session.marks[s.id]=new Date().toLocaleTimeString();renderList()}
+    $('who').className='who hit';
+    $('who').innerHTML=`<b>${esc(s.name)}</b><br>Roll ${esc(s.roll)} · ${esc(s.course)}${s.email?' · '+esc(s.email):''}<br><span class="pill present">${first?'Marked present':'Already marked present at '+session.marks[s.id]}</span>`;
+  },700);
+}
+$('end').onclick=()=>{
+  if(!session||!confirm('End session? Everyone not scanned will be marked absent.'))return;
+  session.ended=true;stop();
+  $('start').disabled=false;$('end').disabled=true;
+  const hh=load('fa_history',[]).filter(h=>!(h.course===session.course&&h.date===session.date));hh.push({course:session.course,date:session.date,marks:session.marks,roster:roster().map(x=>({id:x.id,roll:x.roll,name:x.name}))});save('fa_history',hh);
+  renderList();$('who').className='who';$('who').innerHTML='<span class="msg">Session ended. Absentees are marked. Download the CSV for your records.</span>';
+};
+function renderList(){
+  if(!session)return;
+  const r=roster();let p=0;
+  $('list').innerHTML=r.map(s=>{
+    const t=session.marks[s.id];if(t)p++;
+    const st=t?'present':session.ended?'absent':'pending';
+    return `<tr><td>${esc(s.roll)}</td><td>${esc(s.name)}</td><td class="pill ${st}">${st[0].toUpperCase()+st.slice(1)}</td><td>${t||''}</td></tr>`}).join('');
+  $('stats').innerHTML=`<span class="present">Present ${p}</span><span class="absent">${session.ended?'Absent '+(r.length-p):'Waiting '+(r.length-p)}</span>`;
+}
+$('csv').onclick=()=>{
+  if(!session)return;
+  const rows=[['Date','Course','Roll','Name','Email','Status','Time']].concat(roster().map(s=>[session.date,s.course,s.roll,s.name,s.email,session.marks[s.id]?'Present':session.ended?'Absent':'Pending',session.marks[s.id]||'']));
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`attendance_${session.course}_${session.date}.csv`;a.click();
+};
+// ---- teacher desk ----
+const hist=()=>load('fa_history',[]);
+function deskInit(){
+  const c=[...new Set(hist().map(h=>h.course))];
+  $('dc').innerHTML=c.map(x=>`<option>${esc(x)}</option>`).join('')||'<option value="">No records yet</option>';
+  if(!$('dm').value)$('dm').value=new Date().toISOString().slice(0,7);
+  desk();
+}
+function monthData(){
+  const c=$('dc').value,m=$('dm').value;
+  const hs=hist().filter(h=>h.course===c&&h.date.startsWith(m)).sort((a,b)=>a.date<b.date?-1:1);
+  const map={};
+  hs.forEach(h=>h.roster.forEach(r=>{map[r.id]=map[r.id]||{roll:r.roll,name:r.name,days:{}};map[r.id].days[h.date]=h.marks[r.id]?'P':'A'}));
+  const rows=Object.values(map).sort((a,b)=>String(a.roll).localeCompare(String(b.roll),undefined,{numeric:true}));
+  return {hs,rows};
+}
+function desk(){
+  const {hs,rows}=monthData();
+  $('dd').innerHTML=hs.map(h=>`<option>${h.date}</option>`).join('')||'<option value="">No classes this month</option>';
+  $('dsum').innerHTML=rows.map(r=>{const v=Object.values(r.days),p=v.filter(x=>x==='P').length;
+    return `<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td class="present">${p}</td><td class="absent">${v.length-p}</td><td>${Math.round(p/v.length*100)}%</td></tr>`}).join('')||'<tr><td class="msg">No records for this month. End a session to save it.</td></tr>';
+  day();
+}
+function day(){
+  const {rows}=monthData(),d=$('dd').value;
+  const f=k=>rows.filter(r=>r.days[d]===k).map(r=>`<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td></tr>`).join('')||'<tr><td class="msg">None</td></tr>';
+  $('dp').innerHTML=f('P');$('da').innerHTML=f('A');
+}
+$('dc').onchange=desk;$('dm').onchange=desk;$('dd').onchange=day;
+$('xl').onclick=()=>{
+  const {hs,rows}=monthData();
+  if(!rows.length)return alert('No records for this month.');
+  if(typeof XLSX==='undefined')return alert('Excel library not loaded. Check your internet and reload.');
+  const dates=hs.map(h=>h.date);
+  const data=rows.map(r=>{const v=Object.values(r.days),p=v.filter(x=>x==='P').length;
+    return [r.roll,r.name,...dates.map(d=>r.days[d]||''),p,v.length-p,v.length,Math.round(p/v.length*100)+'%']});
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Roll','Name',...dates,'Present','Absent','Classes','Percent'],...data]),'Attendance');
+  XLSX.writeFile(wb,`attendance_${$('dc').value}_${$('dm').value}.xlsx`);
+};
+$('clr').onclick=()=>{
+  const c=$('dc').value,m=$('dm').value;
+  if(!c||!confirm(`Delete ${c} records for ${m}? Download the Excel first.`))return;
+  save('fa_history',hist().filter(h=>!(h.course===c&&h.date.startsWith(m))));deskInit();
+};
+init();
+</script>
+</body>
+</html>
